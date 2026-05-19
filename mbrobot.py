@@ -1,5 +1,6 @@
-# mbrobot.py
-# Date 10/09/24
+# For Maqueen lite V5
+# mbrobotv5.py
+# Date 19/05/26
 
 from microbit import i2c, pin1, pin2, pin8, pin12, pin13, pin14, pin15, sleep
 import gc
@@ -251,6 +252,7 @@ class Motor:
         direction = 0 if speed > 0 else 1
         _setSingleMotor(self._side, direction, power)
 
+# currently not returning values based on testing
 def readLightIntensity(side):
     _wr1(78)
     LightBuffer = i2c.read(0x10, 4, repeat=False)
@@ -259,9 +261,6 @@ def readLightIntensity(side):
         return LightBuffer[0] << 8 | LightBuffer[1]
     else:
         return LightBuffer[2] << 8 | LightBuffer[3]
-
-
-
 
 def setServo(servo, angle):
     # """Moves the Servo to position angle.
@@ -295,8 +294,6 @@ def setServo(servo, angle):
         raise RuntimeError(_UNCONNECTEDERRORMSG)
 
 # Sensor functions
-
-
 class IRSensor():
     def __init__(self, pin):
         # """Create a new IR sensor.
@@ -318,6 +315,7 @@ class IRSensor():
         # """
         return self._pin.read_digital()
 
+	# have not attempted to include analog values. Unsure if v5 has this capacity.
     def read_analog(self):
         raise NameError(
             "Maqueen Lite does not support reading analog sensor values.")
