@@ -294,14 +294,16 @@ def setServo(servo, angle):
         raise RuntimeError(_UNCONNECTEDERRORMSG)
 
 # Sensor functions
-class IRSensor():
-    def __init__(self, pin):
+class IRSensor:
+    _address = bytes(b'\x1D')
+
+    def __init__(self, index):
         # """Create a new IR sensor.
 
         # Parameter:
-        #     pin (object): pin13=left, pin14=right
+        #     index (int): 0=R2, 1=R1, 2=M, 3=L1, 4=L2
         # """
-        self._pin = pin
+        self._index = index
 
     def read_digital(self):
         # """Returns if the surface below is dark or bright.
@@ -312,13 +314,19 @@ class IRSensor():
         # Returns:
         #     0 if the surface is dark. No light was reflected (in Air).
         #     1 if the surface is bright. A lot of light was reflected.
+        #
+        # raises:
+        #     RuntimeError: if Robot is switched off or unconnected. (replaces ENODEV error)
         # """
-        return self._pin.read_digital()
+        try:
+            i2c.write(0x10, IRSensor._address)
+        except:
+            raise RuntimeError(_UNCONNECTEDERRORMSG)
+        byte = ~i2c.read(0x10, 1)[0]
+        # mask out corresponding bit, from returned byte.
+        return (byte & (2 ** self._index)) >> self._index
 
-	# have not attempted to include analog values. Unsure if v5 has this capacity.
-    def read_analog(self):
-        raise NameError(
-            "Maqueen Lite does not support reading analog sensor values.")
+
 
 
 def getDistance():
@@ -398,9 +406,11 @@ def beep():
 
 
 # Default instances
+# Default instances
 pin2.set_pull(pin2.NO_PULL)
 delay = sleep
-irLeft = IRSensor(pin13)
-irRight = IRSensor(pin14)
+irL = IRSensor(0)
+irR = IRSensor(2)
+IrM = IRSensor(1)
 motL = Motor(0)
 motR = Motor(2)
