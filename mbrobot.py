@@ -10,9 +10,9 @@ import neopixel
 
 # Motor state
 _speedPercent = 50
-_powerByteL = 40
-_powerByteR = 40
-_motorState = bytearray(5)
+_powerByteL = 50
+_powerByteR = 50
+_motorState = bytearray(6)
 _servoBytes = bytearray(2)
 _powerBytesLUT = bytes(b'\x00\x0b\x0b\x0c\x0c\x0d\x0d\x0d\x0e\x0e\x0f\x0f\x0f\x10\x10\x11\x11\x11\x12\x12\x13\x13\x13\x14\x14\x15\x15\x15\x16\x16\x17\x17\x17\x18\x19\x1a\x1b\x1b\x1c\x1d\x1e\x1f\x20\x21\x22\x23\x23\x24\x25\x26\x27\x28\x29\x2a\x2b\x2b\x2c\x2d\x2e\x2f\x30\x31\x32\x33\x34\x36\x38\x3a\x3c\x3f\x41\x44\x46\x49\x4c\x4f\x53\x56\x5a\x5e\x62\x67\x6b\x70\x75\x7b\x81\x87\x8d\x94\x9b\xa3\xab\xb4\xbd\xc6\xd0\xdb\xe6\xf2\xff')
 
@@ -343,20 +343,26 @@ def getDistance():
     cm = (p >> 6) + (p >> 10) + (p >> 11) + (p >> 12) + 1
     return max(min(cm, 500), 0) if cm > 0 else 255
 
-# Signaling functions
+# Lights
+class LEDState:
+    OFF = 0
+    RED = 1
+    GREEN = 2
+    YELLOW = 3
+    BLUE = 4
+    PINK = 5
+    CYAN = 6
+    WHITE = 7
 
-def setLEDs(rgbl, rgbr):
-    _wr2(11, rgbl)
-    _wr2(12, rgbr)
-
-def setLED(rgb):
-    setLEDs(rgb, rgb)
-	
-def setLEDLeft(rgbl):
-    _wr2(11, rgbl)
-	
-def setLEDRight(rgbr):
-    _wr2(12, rgbr)	
+def setLED(state, stateR=None):
+    stateR = stateR or state
+    i2c.write(0x10, bytearray([0x0B, state, stateR]))
+        
+def setLEDLeft(state):
+    i2c.write(0x10, bytearray([0x0B, state])) 
+    
+def setLEDRight(state):
+    i2c.write(0x10, bytearray([0x0C, state])) 
 
 def fillRGB(red, green, blue):
     # """Uses Neopixel to set all 4 bottom RGB LEDs color.
@@ -413,4 +419,4 @@ irL = IRSensor(0)
 irR = IRSensor(2)
 IrM = IRSensor(1)
 motL = Motor(0)
-motR = Motor(2)
+motR = Motor(1)
