@@ -1,4 +1,4 @@
-# mbrobotv5_compact.py
+# for mbrobotv5
 # Compact MicroPython library for DFRobot Maqueen Lite V5
 # Updated 29/08/26
 
