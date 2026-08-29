@@ -1,5 +1,4 @@
-# for mbrobotv5
-# Compact MicroPython library for DFRobot Maqueen Lite V5
+# MicroPython library for Maqueen lite v5 based on TigerJython (big shout out to these peeps)
 # Updated 29/08/26
 
 from microbit import i2c, pin1, pin2, pin15, sleep
