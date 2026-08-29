@@ -1,4 +1,5 @@
 # MicroPython library for Maqueen lite v5 based on TigerJython (big shout out to these peeps)
+# Original TigerJython libraries are licensed under Mozilla Public License (MPL 2.0)
 # Updated 29/08/26
 
 from microbit import i2c, pin1, pin2, pin15, sleep
