@@ -15,6 +15,8 @@ SERVO_2=21
 LINE_STATE=29
 LINE_ADC=(32,34,36)       # left, middle, right
 LIGHT=(41,43)             # left, right
+_lightOffsetLeft = 0
+_lightOffsetRight = 0
 
 # Public position constants
 LEFT=0
@@ -274,6 +276,21 @@ def patrolOff():
 def patrolSpeed(level):
     i2c.write(A, bytearray([72,level]))
     pin2.set_pull(pin2.NO_PULL)
+
+def calibrateLight():
+    global _lightOffsetLeft
+    global _lightOffsetRight
+    l = readLightLeft()
+    r = readLightRight()
+    average = (l + r) // 2
+    _lightOffsetLeft = average - l
+    _lightOffsetRight = average - r
+
+def readLightLeftCal():
+    return readLightLeft() + _lightOffsetLeft
+
+def readLightRightCal():
+    return readLightRight() + _lightOffsetRight
 
 pin2.set_pull(pin2.NO_PULL)
 delay=sleep
