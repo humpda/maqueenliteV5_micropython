@@ -251,6 +251,29 @@ def setAlarm(state):
 
 def beep(): music.pitch(440,200,wait=False)
 
+def readBattery(batteryType=BATTERY_ALKALINE):
+    ''' Returns battery percentage 0-100
+        batteryType:
+        BATTERY_ALKALINE = 1
+        BATTERY_LITHIUM = 0
+    '''
+    i2c.write(A, bytearray([BATTERY_SET, batteryType]))
+    sleep(50)
+    _write1(BATTERY)
+    value = i2c.read(A, 1)[0]
+    if value > 100:
+        value = 100
+    return value
+
+def patrolOn():
+    i2c.write(A, bytearray([71,1]))
+
+def patrolOff():
+    i2c.write(A, bytearray([71,0]))
+
+def patrolSpeed(level):
+    i2c.write(A, bytearray([72,level]))
+    pin2.set_pull(pin2.NO_PULL)
 
 pin2.set_pull(pin2.NO_PULL)
 delay=sleep
