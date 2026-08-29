@@ -1,18 +1,54 @@
-# For Maqueen lite V5
+ For Maqueen Lite V5
 # mbrobotv5.py
-# Date 19/05/26
+# Original date: 19/05/26
+# Updated: 29/08/26
 
-from microbit import i2c, pin1, pin2, pin8, pin12, pin13, pin14, pin15, sleep
+from microbit import i2c, pin1, pin2, pin15, sleep
 import gc
 import machine
 import music
 import neopixel
 
+# I2C configuration
+I2C_ADDRESS = 0x10
+_add_mq = I2C_ADDRESS
+
+# Maqueen Lite V5 registers
+MOTOR_LEFT = 0x00
+MOTOR_RIGHT = 0x02
+RGB_LEFT = 0x0B
+RGB_RIGHT = 0x0C
+SERVO_1 = 0x14
+SERVO_2 = 0x15
+BLACK_ADC_STATE = 0x1D
+ADC_COLLECT_0 = 0x1E
+ADC_COLLECT_1 = 0x20
+ADC_COLLECT_2 = 0x22
+ADC_COLLECT_3 = 0x24
+ADC_COLLECT_4 = 0x26
+LIGHT_LEFT_HIGH = 0x29
+LIGHT_LEFT_LOW = 0x2A
+LIGHT_RIGHT_HIGH = 0x2B
+LIGHT_RIGHT_LOW = 0x2C
+BATTERY_SET = 0x2D
+BATTERY_LEVEL = 0x2E
+VERSION_LENGTH = 0x32
+VERSION_DATA = 0x33
+SYSTEM_INIT = 0x46
+LINE_WALKING = 0x47
+LINE_SPEED_GRADE = 0x48
+CAR_STATE = 0x49
+CROSS_DEFAULT = 0x4B
+T1_DEFAULT = 0x4C
+T2_DEFAULT = 0x4D
+T3_DEFAULT = 0x4E
+
 # Motor state
 _speedPercent = 50
 _powerByteL = 50
 _powerByteR = 50
-_motorState = bytearray(6)
+# Combined write: register, L direction, L power, R direction, R power.
+_motorState = bytearray(5)
 _servoBytes = bytearray(2)
 _powerBytesLUT = bytes(b'\x00\x0b\x0b\x0c\x0c\x0d\x0d\x0d\x0e\x0e\x0f\x0f\x0f\x10\x10\x11\x11\x11\x12\x12\x13\x13\x13\x14\x14\x15\x15\x15\x16\x16\x17\x17\x17\x18\x19\x1a\x1b\x1b\x1c\x1d\x1e\x1f\x20\x21\x22\x23\x23\x24\x25\x26\x27\x28\x29\x2a\x2b\x2b\x2c\x2d\x2e\x2f\x30\x31\x32\x33\x34\x36\x38\x3a\x3c\x3f\x41\x44\x46\x49\x4c\x4f\x53\x56\x5a\x5e\x62\x67\x6b\x70\x75\x7b\x81\x87\x8d\x94\x9b\xa3\xab\xb4\xbd\xc6\xd0\xdb\xe6\xf2\xff')
 
@@ -21,7 +57,7 @@ _powerOffset = 0
 _powerDifferential = 0
 _arcScaling = 0
 
-# signaling objects
+# Signalling objects
 _underglowNP = neopixel.NeoPixel(pin15, 4)
 np_rgb_pixels = _underglowNP
 _alarmSequence = ['c5:1', 'r', 'c5:1', 'r:3']
@@ -29,162 +65,105 @@ _alarmSequence = ['c5:1', 'r', 'c5:1', 'r:3']
 _UNCONNECTEDERRORMSG = "Please connect to Maqueen robot and switch it on."
 _buff1 = bytearray(1)
 _buff2 = bytearray(2)
-# Utility functions
+
 
 def _wr1(reg):
+    """Select a one-byte Maqueen register."""
     _buff1[0] = reg
-    i2c.write(_add_mq, _buff1)
+    try:
+        i2c.write(_add_mq, _buff1)
+    except:
+        raise RuntimeError(_UNCONNECTEDERRORMSG)
+
 
 def _wr2(reg, val):
+    """Write a one-byte value to a Maqueen register."""
     _buff2[0] = reg
     _buff2[1] = val
-    i2c.write(_add_mq, _buff2)
+    try:
+        i2c.write(_add_mq, _buff2)
+    except:
+        raise RuntimeError(_UNCONNECTEDERRORMSG)
+
+
+def _read16be(reg):
+    """Select reg and read a two-byte, big-endian unsigned value."""
+    _wr1(reg)
+    try:
+        data = i2c.read(I2C_ADDRESS, 2, repeat=False)
+    except:
+        raise RuntimeError(_UNCONNECTEDERRORMSG)
+    return (data[0] << 8) | data[1]
 
 
 def _setMotors(dirL, powerL, dirR, powerR):
-    # """Write Motor State via i2c
-
-    # Parameters:
-    #     dirL (0/1): Direction of left Wheel. 0=forward, 1=backward
-    #     powerL (int): Power of left Wheel in range [0,255].
-    #     dirR (0/1): Direction of right Wheel. 0=forward, 1=backward
-    #     powerR (int): Power of right Wheel in range [0,255].
-    #
-    # raises:
-    #     RuntimeError: if Robot is switched off or unconnected. (replaces ENODEV error)
-    # """
-    global _motorState
+    """Write both motor states via I2C."""
+    _motorState[0] = MOTOR_LEFT
     _motorState[1] = dirL
     _motorState[2] = powerL
     _motorState[3] = dirR
     _motorState[4] = powerR
     try:
-        i2c.write(0x10, _motorState)
+        i2c.write(I2C_ADDRESS, _motorState)
     except:
         raise RuntimeError(_UNCONNECTEDERRORMSG)
 
 
-def _setSingleMotor(side, dir, power):
-    # """Write Motor State of a single Motor via i2c
-
-    # Parameters:
-    #     side (0/2): Selection of the Wheel. 0=left, 2=right
-    #     dir (0/1): Direction for that Wheel. 0=forward, 1=backward
-    #     power (int): Power for that Wheel in range [0,255].
-    #
-    # raises:
-    #     RuntimeError: if Robot is switched off or unconnected. (replaces ENODEV error)
-    # """
-    global _motorState
-    _motorState[1 + side] = dir
+def _setSingleMotor(side, direction, power):
+    """Write one motor. side is 0 for left or 2 for right."""
+    if side != MOTOR_LEFT and side != MOTOR_RIGHT:
+        raise ValueError("Motor side must be 0 for left or 2 for right.")
+    _motorState[0] = MOTOR_LEFT
+    _motorState[1 + side] = direction
     _motorState[2 + side] = power
     try:
-        i2c.write(0x10, _motorState)
+        i2c.write(I2C_ADDRESS, _motorState)
     except:
         raise RuntimeError(_UNCONNECTEDERRORMSG)
-
-# _getPowerByte was used to create LookUpTable (_powerBytesLUT) used in _getPowerByteLUT to reduce Memory Leaks.
-# def _getPowerByte(speed, offset):
-#     # """Computes the power value for a given speed in %.
-#     # It accouts for the nonlinearity of motor strength.
-#     # This is the original function that generates the LUT.
-#
-#     # Parameter:
-#     #     speed (number): Desired speed of the Robot in %. Range [0,100].
-#     #     offset (number): basic power offset to add to the function.
-#     # Returns:
-#     #     int: Power in range [0,255] to write to the motors via i2c.
-#     # """
-#     if speed <= 0:
-#         return 0
-#     if speed <= 33:
-#         return int(0.4 * speed + 11 + offset)
-#     elif speed <= 63:
-#         return int(0.89 * speed - 5 + offset)
-#     elif speed < 100:
-#         return int(min(1.0561 ** speed + 20 + offset, 255))
-#     else:
-#         return 255
 
 
 def _getPowerByteLUT(speed, offset):
-    # """Lookup Table version of _getPowerByte"""
-    return min(_powerBytesLUT[speed] + offset, 255)
+    """Lookup-table version of the motor power curve."""
+    return max(0, min(_powerBytesLUT[speed] + offset, 255))
 
 
 def _getArcBytes(r):
-    # """Computes the power bytes to drive an arc.
-
-    # Parameter:
-    #     r (float): Radius in meters of the desired Arc.
-    #         Measured from the center of the axle.
-    # Returns:
-    #     (int, int): Power byte values for each motor.
-    #         First the outer Wheels byte [0,255],
-    #         then the inner Wheels byte [0,255].
-    # """
+    """Compute inner and outer motor power for an arc of radius r metres."""
     outerSpeed = _speedPercent
-    rCm = int(r * 100)  # r in cm instead of meters
-    # adjust outer speed for unhealthy combinations
-    # That is: too low speeds and big arcs.
+    rCm = int(r * 100)
     threshold = outerSpeed - max(rCm + 20, 40)
     if threshold <= 0:
         outerSpeed = min(max(rCm + 40, 40), 100)
     reducedSpeed = 0
-    if rCm >= 4:  # minimal radius is half the axle size: 3.5 cm rounded.
+    if rCm >= 4:
         flattening = (100 - outerSpeed) // 2
-        reducedSpeed = (rCm * 10 - 35) / \
-            (rCm * (11 + (_arcScaling-4)/10) + 90 + flattening)
+        reducedSpeed = ((rCm * 10 - 35) /
+                        (rCm * (11 + (_arcScaling - 4) / 10) +
+                         90 + flattening))
         reducedSpeed = reducedSpeed * outerSpeed
     innerByte = _getPowerByteLUT(int(reducedSpeed), 0)
     outerByte = _getPowerByteLUT(int(outerSpeed), 0)
-    return (innerByte, outerByte)
+    return innerByte, outerByte
 
-# Movement Functions
 
+# Movement functions
 
 def calibrate(offset, differential=0, arcScaling=0):
-    # """Adjust the driving behaviour of the robots
-
-    # Parameters:
-    #     offset (int): Offsets the minimal power of the motors.
-    #         Range [-10,50]. Highly affected by battery level.
-    #         Adjust this value until it starts moving at speed 1%.
-    #     differential (int, optional): Adjusts power difference
-    #         of left and right Wheel. Range [-150, 150].
-    #         Varies unpredictably with different speeds.
-    #         If a Robot steers left when driving forward: negative value
-    #         If a Robot steers right when driving forward: positive value
-    #         Perfectly straight driving Robots can leave this at 0.
-    #     arcScaling (int, optional): Adjusts the radius
-    #         driven by leftArc/rightArc. Valid range [-50, 50].
-    #         If the Robots radius is too large: positive value
-    #         If the Robots radius is too small: negative value
-    #         This then adjusts all radii for this Robot, by
-    #         scaling it's internal function to the new range.
-    # """
-    global _powerDifferential
-    global _powerOffset
-    global _arcScaling
+    """Adjust minimum motor power, L/R differential and arc scaling."""
+    global _powerDifferential, _powerOffset, _arcScaling
     _powerOffset = max(min(int(offset), 50), -10)
     _powerDifferential = max(min(int(differential), 150), -150)
-    _arcScaling = max(min(arcScaling, 50), -15)
+    _arcScaling = max(min(int(arcScaling), 50), -15)
     setSpeed(_speedPercent)
 
 
 def setSpeed(speed):
-    # """sets the speed for future motion
-
-    # Parameter:
-    #     speed (int): in Range [0,100] as % of desired velocity.
-    # """
-    global _speedPercent
-    global _powerByteL
-    global _powerByteR
+    """Set the speed used by later movement commands, from 0 to 100%."""
+    global _speedPercent, _powerByteL, _powerByteR
     _speedPercent = int(min(max(speed, 0), 100))
     powerByte = _getPowerByteLUT(_speedPercent, _powerOffset)
-    boost = round((1 - _speedPercent / 100) *
-                  abs(_powerDifferential)) if _speedPercent > 0 else 0
+    boost = (round((1 - _speedPercent / 100) * abs(_powerDifferential))
+             if _speedPercent > 0 else 0)
     reduction = round((_speedPercent / 100) * abs(_powerDifferential))
     if _powerDifferential > 0:
         _powerByteL = powerByte - reduction
@@ -192,6 +171,8 @@ def setSpeed(speed):
     else:
         _powerByteL = powerByte + boost
         _powerByteR = powerByte - reduction
+    _powerByteL = int(min(max(_powerByteL, 0), 255))
+    _powerByteR = int(min(max(_powerByteR, 0), 255))
 
 
 def resetSpeed():
@@ -219,131 +200,176 @@ def right():
 
 
 def rightArc(radius):
-    # """radius must be given in meters."""
     inner, outer = _getArcBytes(radius)
     _setMotors(0, outer, 0, inner)
 
 
 def leftArc(radius):
-    # """radius must be given in meters."""
     inner, outer = _getArcBytes(radius)
     _setMotors(0, inner, 0, outer)
 
 
 class Motor:
     def __init__(self, side):
-        # """Create a single motor.
-
-        # Parameter:
-        #     side (8/2): 0=left, 2=right
-        # """
+        """Create a motor: 0=left, 2=right."""
+        if side != MOTOR_LEFT and side != MOTOR_RIGHT:
+            raise ValueError("Motor side must be 0 for left or 2 for right.")
         self._side = side
 
     def rotate(self, speed):
-        # """Controls rotation of this motor.
-
-        # Parameters:
-        #     speed (int): Desired speed in %.
-        #         Valid range [-100,100].
-        #         Negative values are for backward turning.
-        # """
+        """Rotate at -100 to 100%. Negative values run backwards."""
         speedClamped = int(min(max(abs(speed), 0), 100))
         power = _getPowerByteLUT(speedClamped, _powerOffset)
-        direction = 0 if speed > 0 else 1
+        if speed == 0:
+            direction = 0
+            power = 0
+        else:
+            direction = 0 if speed > 0 else 1
         _setSingleMotor(self._side, direction, power)
 
-# currently not returning values based on testing
-def readLightIntensity(side):
-    _wr1(78)
-    LightBuffer = i2c.read(0x10, 4, repeat=False)
-    if side == 1:
+    def stop(self):
+        _setSingleMotor(self._side, 0, 0)
 
-        return LightBuffer[0] << 8 | LightBuffer[1]
-    else:
-        return LightBuffer[2] << 8 | LightBuffer[3]
+
+# Onboard V5 light sensors
+class LightSensor:
+    LEFT = 0
+    RIGHT = 1
+
+
+def readLightIntensity(side):
+    """Read a V5 light sensor. side: 0=left, 1=right."""
+    if side == LightSensor.LEFT:
+        return _read16be(LIGHT_LEFT_HIGH)
+    if side == LightSensor.RIGHT:
+        return _read16be(LIGHT_RIGHT_HIGH)
+    raise ValueError("Light sensor side must be 0 for left or 1 for right.")
+
+
+def readLightLeft():
+    return readLightIntensity(LightSensor.LEFT)
+
+
+def readLightRight():
+    return readLightIntensity(LightSensor.RIGHT)
+
+
+def readLightPair():
+    return readLightLeft(), readLightRight()
+
+
+# Servos
 
 def setServo(servo, angle):
-    # """Moves the Servo to position angle.
-    # Servos must be connected to the Maqueen Lite's Servo connectors.
-    # They are located in front of the left wheel.
-
-    # Parameters:
-    #     servo (str): Desired Servo Port. Either 'S1' or 'S2'.
-    #     angle (int): Desired angle in degrees. Range [0,180].
-
-    # raises:
-    #     ValueError: if arguments are out of valid range
-    #     RuntimeError: if Robot is switched off or unconnected.
-    # """
-    global _servoBytes
-    # Acceptance of "P0" and "P1" is for compatibility with V2.
+    """Move S1/S2 to an angle from 0 to 180 degrees."""
     if servo == 'S1' or servo == 'P0':
-        _servoBytes[0] = 0x14
+        _servoBytes[0] = SERVO_1
     elif servo == 'S2' or servo == 'P1':
-        _servoBytes[0] = 0x15
+        _servoBytes[0] = SERVO_2
     else:
         raise ValueError("Unknown Servo. Please use 'S1' or 'S2'.")
-
     if angle < 0 or angle > 180:
-        raise ValueError("Invalid angle. Must be between 0 and 180")
-
-    _servoBytes[1] = angle
+        raise ValueError("Invalid angle. Must be between 0 and 180.")
+    _servoBytes[1] = int(angle)
     try:
-        i2c.write(0x10, _servoBytes)
+        i2c.write(I2C_ADDRESS, _servoBytes)
     except:
         raise RuntimeError(_UNCONNECTEDERRORMSG)
 
-# Sensor functions
+
+# Line-tracking sensors
 class IRSensor:
     _address = bytes(b'\x1D')
 
     def __init__(self, index):
-        # """Create a new IR sensor.
-
-        # Parameter:
-        #     index (int): 0=R2, 1=R1, 2=M, 3=L1, 4=L2
-        # """
+        """Create an IR sensor. Firmware bit index must be 0 to 4."""
+        if index < 0 or index > 4:
+            raise ValueError("IR sensor index must be between 0 and 4.")
         self._index = index
 
-    def read_digital(self):
-        # """Returns if the surface below is dark or bright.
-        # Result can be adjusted by putting the sensor on the dark
-        # surface and pressing the LineKey calibration button on the
-        # Robot for a few seconds, until the LED's blink.
-
-        # Returns:
-        #     0 if the surface is dark. No light was reflected (in Air).
-        #     1 if the surface is bright. A lot of light was reflected.
-        #
-        # raises:
-        #     RuntimeError: if Robot is switched off or unconnected. (replaces ENODEV error)
-        # """
+    '''def read_digital(self):
+        """Return 0 for dark and 1 for bright."""
         try:
-            i2c.write(0x10, IRSensor._address)
+            i2c.write(I2C_ADDRESS, IRSensor._address)
+            value = ~i2c.read(I2C_ADDRESS, 1)[0]
         except:
             raise RuntimeError(_UNCONNECTEDERRORMSG)
-        byte = ~i2c.read(0x10, 1)[0]
-        # mask out corresponding bit, from returned byte.
-        return (byte & (2 ** self._index)) >> self._index
+        return (value & (1 << self._index)) >> self._index
+    '''
+
+def readLineDigital():
+    _wr1(29) # BLACK_ADC_STATE
+    value = i2c.read(0x10, 1)[0]
+    return value
+
+def readLineLeft():
+    value = readLineDigital()
+    return 1 if (value & 0x04) else 0
+
+def readLineMiddle():
+    value = readLineDigital()
+    return 1 if (value & 0x02) else 0
+
+def readLineRight():
+    value = readLineDigital()
+    return 1 if (value & 0x01) else 0
 
 
+class LineSensor:
+    LEFT = 0
+    MIDDLE = 1
+    RIGHT = 2
+    
 
+
+_LINE_ADC_REGISTERS = (
+    ADC_COLLECT_0,
+    ADC_COLLECT_1,
+    ADC_COLLECT_2
+)
+
+
+def readLineADC(position):
+    if position < 0 or position > 2:
+        raise ValueError("Line sensor position must be between 0 and 2.")
+    _wr1(_LINE_ADC_REGISTERS[position])
+    buf = i2c.read(0x10, 2, repeat=False)
+    return (buf[0] << 8) | buf[1]
+
+def readLineAdcLeft():
+    _wr1(32)
+    buf = i2c.read(0x10, 2)
+    return (buf[0] << 8) | buf[1]
+
+
+def readLineAdcMiddle():
+    _wr1(34)
+    buf = i2c.read(0x10, 2)
+    return (buf[0] << 8) | buf[1]
+
+
+def readLineAdcRight():
+    _wr1(36)
+    buf = i2c.read(0x10, 2)
+    return (buf[0] << 8) | buf[1]
+
+def readLineSensors():
+    return readLineLeft(), readLineMiddle(), readLineRight()
+
+
+# Ultrasonic sensor
 
 def getDistance():
-    # """uses the ultrasonic sensor to measure distance
-
-    # Returns:
-    #     int: valid Distance as cm in range [0,500].
-    #         For measurement errors or larger distances: 255.
-    # """
+    """Read ultrasonic distance in centimetres; returns 255 on timeout."""
     pin1.write_digital(1)
     pin1.write_digital(0)
-    p = machine.time_pulse_us(pin2, 1, 50000)
-    # approximate division: cm = p / 57.5
-    cm = (p >> 6) + (p >> 10) + (p >> 11) + (p >> 12) + 1
+    pulse = machine.time_pulse_us(pin2, 1, 50000)
+    cm = ((pulse >> 6) + (pulse >> 10) + (pulse >> 11) +
+          (pulse >> 12) + 1)
     return max(min(cm, 500), 0) if cm > 0 else 255
 
-# Lights
+
+# Front RGB headlights
 class LEDState:
     OFF = 0
     RED = 1
@@ -354,53 +380,64 @@ class LEDState:
     CYAN = 6
     WHITE = 7
 
+
 def setLED(state, stateR=None):
-    stateR = stateR or state
-    i2c.write(0x10, bytearray([0x0B, state, stateR]))
-        
+    """Set both front RGB headlights."""
+    if stateR is None:
+        stateR = state
+    try:
+        i2c.write(I2C_ADDRESS, bytearray([RGB_LEFT, state, stateR]))
+    except:
+        raise RuntimeError(_UNCONNECTEDERRORMSG)
+
+
 def setLEDLeft(state):
-    i2c.write(0x10, bytearray([0x0B, state])) 
-    
+    try:
+        i2c.write(I2C_ADDRESS, bytearray([RGB_LEFT, state]))
+    except:
+        raise RuntimeError(_UNCONNECTEDERRORMSG)
+
+
 def setLEDRight(state):
-    i2c.write(0x10, bytearray([0x0C, state])) 
+    try:
+        i2c.write(I2C_ADDRESS, bytearray([RGB_RIGHT, state]))
+    except:
+        raise RuntimeError(_UNCONNECTEDERRORMSG)
+
+
+# Underglow NeoPixels
 
 def fillRGB(red, green, blue):
-    # """Uses Neopixel to set all 4 bottom RGB LEDs color.
-    # Parameters (red,green,blue) are each a byte in Range [0,255].
-    # """
+    """Set all four underside RGB LEDs."""
+    red = int(min(max(red, 0), 255))
+    green = int(min(max(green, 0), 255))
+    blue = int(min(max(blue, 0), 255))
     for i in range(4):
         _underglowNP[i] = (red, green, blue)
     _underglowNP.show()
 
 
 def clearRGB():
+    """Turn off all underside RGB LEDs."""
     _underglowNP.clear()
+    _underglowNP.show()
 
 
 def setRGB(position, red, green, blue):
-    # """Uses Neopixel to set a single RGB LED of the robot.
-
-    # Parameters:
-    #     position (int): position of the targeted LED.
-    #         Numbers are visible at underside of Robot.
-    #         0=front left
-    #         1=back left
-    #         2=back right
-    #         3=front right
-    #     red, green, blue (int): color byte value.
-    #         each in range [0,255].
-
-    # raises:
-    #     ValueError: if position argument is out of valid range
-    # """
+    """Set one underside RGB LED, position 0 to 3."""
     if position < 0 or position > 3:
-        raise ValueError("invalid RGB-LED position. Must be 0,1,2 or 3.")
+        raise ValueError("Invalid RGB-LED position. Must be 0, 1, 2 or 3.")
+    red = int(min(max(red, 0), 255))
+    green = int(min(max(green, 0), 255))
+    blue = int(min(max(blue, 0), 255))
     _underglowNP[position] = (red, green, blue)
     _underglowNP.show()
 
 
+# Sound
+
 def setAlarm(state):
-    # """state: 0=Off, 1=On"""
+    """state: 0=off, non-zero=on."""
     if state:
         music.play(_alarmSequence, wait=False, loop=True)
     else:
@@ -411,12 +448,18 @@ def beep():
     music.pitch(440, 200, wait=False)
 
 
-# Default instances
-# Default instances
+def collectGarbage():
+    gc.collect()
+
+
+# Default instances and compatibility aliases
 pin2.set_pull(pin2.NO_PULL)
 delay = sleep
+
+# Original aliases retained. These follow the original library's bit indexes.
 irL = IRSensor(0)
 irR = IRSensor(2)
 IrM = IRSensor(1)
-motL = Motor(0)
-motR = Motor(1)
+
+motL = Motor(MOTOR_LEFT)
+motR = Motor(MOTOR_RIGHT)
